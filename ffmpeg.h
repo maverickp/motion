@@ -6,6 +6,7 @@
 
 #ifdef FFMPEG_NEW_INCLUDES
 #include <libavformat/avformat.h>
+#include <libavformat/avio.h>
 #else
 #include <avformat.h>
 #endif

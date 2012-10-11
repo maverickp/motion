@@ -38,9 +38,9 @@
 #endif /* LIBAVCODEC_BUILD > 4680 */
 
 #if defined LIBAVFORMAT_VERSION_MAJOR && defined LIBAVFORMAT_VERSION_MINOR 
-#   if LIBAVFORMAT_VERSION_MAJOR < 53 && LIBAVFORMAT_VERSION_MINOR < 45
-#       define GUESS_NO_DEPRECATED 
-#   endif
+#if LIBAVFORMAT_VERSION_MAJOR < 53 && LIBAVFORMAT_VERSION_MINOR < 45
+    #define GUESS_NO_DEPRECATED 
+#endif
 #endif
 
 #if LIBAVFORMAT_BUILD >= 4616
@@ -63,15 +63,6 @@
 #    define AVSTREAM_CODEC_PTR(avs_ptr) (&avs_ptr->codec)
 #endif /* LIBAVFORMAT_BUILD >= 4629 */
 
-// AV_VERSION_INT(a, b, c) (a<<16 | b<<8 | c) 
-// (54*2^16 | 6*2^8 | 100)
-#if LIBAVFORMAT_BUILD >= 3540580
-#define FF_API_NEW_AVIO
-#define URL_RDONLY  AVIO_FLAG_READ       /**< read-only */
-#define URL_WRONLY  AVIO_FLAG_WRITE      /**< write-only */
-#define URL_RDWR    AVIO_FLAG_READ_WRITE /**< read-write pseudo flag */
-#endif
-
 
 /*
  * Name of custom file protocol for appending to existing files instead
@@ -89,188 +80,6 @@ AVFrame *ffmpeg_prepare_frame(struct ffmpeg *, unsigned char *,
 static unsigned char mpeg1_trailer[] = {0x00, 0x00, 0x01, 0xb7};
 
 
-// FFMPEG API changed in 0.8
-#if defined FF_API_NEW_AVIO
-
-// TODO 
-
-	
-#else
-
-/**
- * file_open_append
- *      Append version of the file open function used in libavformat when opening
- *      an ordinary file. The original file open function truncates an existing
- *      file, but this version appends to it instead.
- *
- *  Returns 0 on success and AVERROR(ENOENT) on error.
- *
- */
-static int file_open_append(URLContext *h, const char *filename, int flags)
-{
-    const char *colon;
-    const char *mode;
-    FILE *fh;
-    size_t bufsize = 0;
-
-    /* Skip past the protocol part of filename. */
-    colon = strchr(filename, ':');
-
-    if (colon)
-        filename = colon + 1;
-
-
-    if (flags & URL_RDWR) {
-        mode = "ab+";
-        bufsize = BUFSIZE_1MEG;
-    } else if (flags & URL_WRONLY) {
-        mode = "ab";
-        bufsize = BUFSIZE_1MEG;
-    } else {
-        mode = "rb";
-    }
-
-    fh = myfopen(filename, mode, bufsize);
-    if (fh == NULL)
-        return AVERROR(ENOENT);
-
-    h->priv_data = (void *)fh;
-    return 0;
-}
-
-/*
- * URLProtocol entry for the append file protocol, which we use for mpeg1 videos
- * in order to get append behavior with url_fopen.
- *
- * Libavformat uses protocols for achieving flexibility when handling files
- * and other resources. A call to url_fopen will eventually be redirected to
- * a protocol-specific open function.
- *
- * The remaining functions (for writing, seeking etc.) are set in ffmpeg_init.
- */
-URLProtocol mpeg1_file_protocol = {
-    .name     = APPEND_PROTO,
-    .url_open = file_open_append
-};
-
-
-#ifdef HAVE_FFMPEG_NEW
-
-/* file_procotol has been removed from avio.h */
-#ifdef FFMPEG_NEW_INCLUDES
-#include <libavutil/avstring.h>
-#else
-#include "avstring.h"
-#endif
-
-/**
- * file_open
- *
- */
-static int file_open(URLContext *h, const char *filename, int flags)
-{
-    const char *mode;
-    FILE *fh;
-    size_t bufsize = 0;
-
-    av_strstart(filename, "file:", &filename);
-
-    if (flags & URL_RDWR) {
-        mode = "wb+";
-        bufsize = BUFSIZE_1MEG;
-    } else if (flags & URL_WRONLY) {
-        mode = "wb";
-        bufsize = BUFSIZE_1MEG;
-    } else {
-        mode = "rb";
-    }
-    fh = myfopen(filename, mode, bufsize);
-    if (fh == NULL)
-        return AVERROR(ENOENT);
-    h->priv_data = (void *)fh;
-    return 0;
-}
-
-/**
- * file_read
- */
-static int file_read(URLContext *h, unsigned char *buf, int size)
-{
-    FILE *fh = (FILE *)h->priv_data;
-    return fread(buf, 1, size, fh);
-}
-
-/**
- * file_write
- */
-static int file_write(URLContext *h, unsigned char *buf, int size)
-{
-    FILE *fh = (FILE *)h->priv_data;
-    return fwrite(buf, 1, size, fh);
-}
-
-/**
- * file_seek
- */
-static int64_t file_seek(URLContext *h, int64_t pos, int whence)
-{
-    FILE *fh = (FILE *)h->priv_data;
-    if (fseek(fh, pos, whence))
-        return -1;
-    return ftell(fh);
-}
-
-/**
- * file_close
- */
-static int file_close(URLContext *h)
-{
-    FILE *fh = (FILE *)h->priv_data;
-    return myfclose(fh);
-}
-
-URLProtocol file_protocol = {
-    "file",
-    file_open,
-    file_read,
-    file_write,
-    file_seek,
-    file_close,
-#if LIBAVFORMAT_BUILD >= (52<<16 | 31<<8)
-    NULL,
-    NULL,
-    NULL,
-#endif
-};
-
-#endif // HAVE_FFMPEG_NEW
-
-#endif // FF_API_NEW_AVIO
-
-/**
- * mpeg1_write_trailer
- *      We set AVOutputFormat->write_trailer to this function for mpeg1. That way,
- *      the mpeg1 video gets a proper trailer when it is closed.
- *
- *  Returns 0
- *
- */
-static int mpeg1_write_trailer(AVFormatContext *s)
-{
-#if defined FF_API_NEW_AVIO
-    avio_write(s->pb, mpeg1_trailer, 4);
-    avio_flush(s->pb);
-#elif LIBAVFORMAT_BUILD >= (52<<16)
-    put_buffer(s->pb, mpeg1_trailer, 4);
-    put_flush_packet(s->pb);
-#else
-    put_buffer(&s->pb, mpeg1_trailer, 4);
-    put_flush_packet(&s->pb);
-#endif /* FF_API_NEW_AVIO -- LIBAVFORMAT_BUILD >= (52<<16) */
-
-    return 0; /* success */
-}
-
 /**
  * ffmpeg_init
  *      Initializes for libavformat.
@@ -287,30 +96,7 @@ void ffmpeg_init()
 
 #if LIBAVCODEC_BUILD > 4680
     av_log_set_callback((void *)ffmpeg_avcodec_log);
-    av_log_set_level(AV_LOG_ERROR);
 #endif
-
-#if defined FF_API_NEW_AVIO
-#else
-    /*
-     * Copy the functions to use for the append file protocol from the standard
-     * file protocol.
-     */
-    mpeg1_file_protocol.url_read  = file_protocol.url_read;
-    mpeg1_file_protocol.url_write = file_protocol.url_write;
-    mpeg1_file_protocol.url_seek  = file_protocol.url_seek;
-    mpeg1_file_protocol.url_close = file_protocol.url_close;
-
-/* Register the append file protocol. */
-#ifdef have_av_register_protocol2
-    av_register_protocol2(&mpeg1_file_protocol, sizeof(mpeg1_file_protocol));
-#elif defined have_av_register_protocol        
-    av_register_protocol(&mpeg1_file_protocol);
-#else
-#   warning av_register_protocolXXX missing
-#endif
-
-#endif // FF_API_NEW_AVIO
 
 }
 
@@ -327,6 +113,7 @@ static AVOutputFormat *get_oformat(const char *codec, char *filename)
 {
     const char *ext;
     AVOutputFormat *of = NULL;
+
     /*
      * Here, we use guess_format to automatically setup the codec information.
      * If we are using msmpeg4, manually set that codec here.
@@ -349,8 +136,6 @@ static AVOutputFormat *get_oformat(const char *codec, char *filename)
         of = av_guess_format("mpeg1video", NULL, NULL);
 #endif 
         /* But we want the trailer to be correctly written. */
-        if (of)
-            of->write_trailer = mpeg1_write_trailer;
 
 #ifdef FFMPEG_NO_NONSTD_MPEG1
     } else if (strcmp(codec, "mpeg1") == 0) {
@@ -457,7 +242,7 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
     AVCodec *codec;
     struct ffmpeg *ffmpeg;
     int is_mpeg1;
-    int ret;
+
     /*
      * Allocate space for our ffmpeg structure. This structure contains all the
      * codec and image information we need to generate movies.
@@ -500,11 +285,8 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
     /* Create a new video stream and initialize the codecs. */
     ffmpeg->video_st = NULL;
     if (ffmpeg->oc->oformat->video_codec != CODEC_ID_NONE) {
-#if defined FF_API_NEW_AVIO 
-        ffmpeg->video_st = avformat_new_stream(ffmpeg->oc, NULL /* Codec */);
-#else
         ffmpeg->video_st = av_new_stream(ffmpeg->oc, 0);
-#endif
+
         if (!ffmpeg->video_st) {
             MOTION_LOG(ERR, TYPE_ENCODER, SHOW_ERRNO, "%s: av_new_stream - could"
                        " not alloc stream");
@@ -566,17 +348,13 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
         c->flags |= CODEC_FLAG_GLOBAL_HEADER;
     }
 
-#if defined FF_API_NEW_AVIO
-// pass the options to avformat_write_header directly
-#else
     /* Set the output parameters (must be done even if no parameters). */
-    if (av_set_parameters(ffmpeg->oc, NULL) < 0) {
-        MOTION_LOG(ERR, TYPE_ENCODER, NO_ERRNO, "%s: av_set_parameters error:"
-                   " Invalid output format parameters");
-        ffmpeg_cleanups(ffmpeg);
-        return NULL;
-    }
-#endif
+//     if (av_set_parameters(ffmpeg->oc, NULL) < 0) {
+//         MOTION_LOG(ERR, TYPE_ENCODER, NO_ERRNO, "%s: av_set_parameters error:"
+//                    " Invalid output format parameters");
+//         ffmpeg_cleanups(ffmpeg);
+//         return NULL;
+//     }
 
     /* Dump the format settings.  This shows how the various streams relate to each other. */
     //dump_format(ffmpeg->oc, 0, filename, 1);
@@ -601,13 +379,7 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
     pthread_mutex_lock(&global_lock);
 
     /* Open the codec */
-#if defined FF_API_NEW_AVIO
-    ret = avcodec_open2(c, codec, NULL /* options */ );
-#else
-    ret = avcodec_open(c, codec);
-#endif
-
-    if (ret < 0) {
+    if (avcodec_open(c, codec) < 0) {
         /* Release the lock. */
         pthread_mutex_unlock(&global_lock);
         MOTION_LOG(ERR, TYPE_ENCODER, NO_ERRNO, "%s: avcodec_open - could not open codec %s",
@@ -660,23 +432,14 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
 
         /*
          * Use append file protocol for mpeg1, to get the append behavior from
-         * url_fopen, but no protocol (=> default) for other codecs.
+         * avio_open, but no protocol (=> default) for other codecs.
          */
         if (is_mpeg1)
-#if defined FF_API_NEW_AVIO
-            snprintf(file_proto, sizeof(file_proto), "%s", filename);
-#else
             snprintf(file_proto, sizeof(file_proto), APPEND_PROTO ":%s", filename);
-#endif
         else
             snprintf(file_proto, sizeof(file_proto), "%s", filename);
 
-
-#if defined FF_API_NEW_AVIO
-        if (avio_open(&ffmpeg->oc->pb, file_proto, URL_WRONLY) < 0) {
-#else
-        if (url_fopen(&ffmpeg->oc->pb, file_proto, URL_WRONLY) < 0) {
-#endif
+        if (avio_open(&ffmpeg->oc->pb, file_proto, AVIO_FLAG_WRITE) < 0) {
             /* Path did not exist? */
             if (errno == ENOENT) {
                 /* Create path for file (don't use file_proto)... */
@@ -685,13 +448,9 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
                     return NULL;
                 }
 
-#if defined FF_API_NEW_AVIO
-                if (avio_open(&ffmpeg->oc->pb, file_proto, URL_WRONLY) < 0) {
-#else
                 /* And retry opening the file (use file_proto). */
-                if (url_fopen(&ffmpeg->oc->pb, file_proto, URL_WRONLY) < 0) {
-#endif
-                    MOTION_LOG(ERR, TYPE_ENCODER, SHOW_ERRNO, "%s: url_fopen -"
+                if (avio_open(&ffmpeg->oc->pb, file_proto, AVIO_FLAG_WRITE) < 0) {
+                    MOTION_LOG(ERR, TYPE_ENCODER, SHOW_ERRNO, "%s: avio_open -"
                                " error opening file %s", filename);
                     ffmpeg_cleanups(ffmpeg);
                     return NULL;
@@ -699,7 +458,7 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
                 /* Permission denied */
             } else if (errno ==  EACCES) {
                 MOTION_LOG(ERR, TYPE_ENCODER, SHOW_ERRNO,
-                           "%s: url_fopen - error opening file %s"
+                           "%s: avio_open - error opening file %s"
                            " ... check access rights to target directory",
                            filename);
                 ffmpeg_cleanups(ffmpeg);
@@ -714,11 +473,8 @@ struct ffmpeg *ffmpeg_open(char *ffmpeg_video_codec, char *filename,
     }
 
     /* Write the stream header, if any. */
-#if defined FF_API_NEW_AVIO
     avformat_write_header(ffmpeg->oc, NULL);
-#else
-    av_write_header(ffmpeg->oc);
-#endif // FF_API_NEW_AVIO
+
     return ffmpeg;
 }
 
@@ -749,6 +505,12 @@ void ffmpeg_cleanups(struct ffmpeg *ffmpeg)
     for (i = 0; i < ffmpeg->oc->nb_streams; i++)
         av_freep(&ffmpeg->oc->streams[i]);
 
+/*
+        if (!(ffmpeg->oc->oformat->flags & AVFMT_NOFILE)) {
+            // close the output file
+            if (ffmpeg->oc->pb) avio_close(&ffmpeg->oc->pb);
+        }
+*/
     /* Free the stream */
     av_free(ffmpeg->oc);
 #if LIBAVFORMAT_BUILD >= 4629
@@ -784,17 +546,15 @@ void ffmpeg_close(struct ffmpeg *ffmpeg)
     for (i = 0; i < ffmpeg->oc->nb_streams; i++)
         av_freep(&ffmpeg->oc->streams[i]);
 
+
     if (!(ffmpeg->oc->oformat->flags & AVFMT_NOFILE)) {
         /* Close the output file. */
-#if defined FF_API_NEW_AVIO
+#if LIBAVFORMAT_BUILD >= (52<<16)
         avio_close(ffmpeg->oc->pb);
-#elif LIBAVFORMAT_BUILD >= (52<<16)
-        url_fclose(ffmpeg->oc->pb);
 #else
-        url_fclose(&ffmpeg->oc->pb);
-#endif /* FF_API_NEW_AVIO -- LIBAVFORMAT_BUILD >= (52<<16) */
+        avio_close(&ffmpeg->oc->pb);
+#endif /* LIBAVFORMAT_BUILD >= (52<<16) */
     }
-
 
     /* Free the stream. */
     av_free(ffmpeg->oc);
@@ -853,8 +613,7 @@ int ffmpeg_put_other_image(struct ffmpeg *ffmpeg, unsigned char *y,
  */
 int ffmpeg_put_frame(struct ffmpeg *ffmpeg, AVFrame *pic)
 {
-    int out_size, ret, got_packet_ptr;
-
+    int out_size, ret;
 #ifdef FFMPEG_AVWRITEFRAME_NEWAPI
     AVPacket pkt;
 
@@ -865,11 +624,11 @@ int ffmpeg_put_frame(struct ffmpeg *ffmpeg, AVFrame *pic)
     if (ffmpeg->oc->oformat->flags & AVFMT_RAWPICTURE) {
         /* Raw video case. The API will change slightly in the near future for that. */
 #ifdef FFMPEG_AVWRITEFRAME_NEWAPI
-#   if LIBAVCODEC_VERSION_MAJOR < 53        
+#if LIBAVCODEC_VERSION_MAJOR < 53        
         pkt.flags |= PKT_FLAG_KEY;
-#   else
+#else
         pkt.flags |= AV_PKT_FLAG_KEY;  
-#   endif        
+#endif        
         pkt.data = (uint8_t *)pic;
         pkt.size = sizeof(AVPicture);
         ret = av_write_frame(ffmpeg->oc, &pkt);
@@ -879,22 +638,10 @@ int ffmpeg_put_frame(struct ffmpeg *ffmpeg, AVFrame *pic)
 #endif /* FFMPEG_AVWRITEFRAME_NEWAPI */
     } else {
         /* Encodes the image. */
-#if defined FF_API_NEW_AVIO
-        pkt.data = ffmpeg->video_outbuf;
-        pkt.size = ffmpeg->video_outbuf_size;
-
-        out_size = avcodec_encode_video2(AVSTREAM_CODEC_PTR(ffmpeg->video_st), 
-                                        &pkt, pic, &got_packet_ptr);
-        if (out_size < 0)
-            // Error encondig 
-            out_size = 0;
-        else
-            out_size = pkt.size;
-#else
         out_size = avcodec_encode_video(AVSTREAM_CODEC_PTR(ffmpeg->video_st),
                                         ffmpeg->video_outbuf,
                                         ffmpeg->video_outbuf_size, pic);
-#endif
+
         /* If zero size, it means the image was buffered. */
         if (out_size != 0) {
             /*
@@ -905,11 +652,12 @@ int ffmpeg_put_frame(struct ffmpeg *ffmpeg, AVFrame *pic)
             pkt.pts = AVSTREAM_CODEC_PTR(ffmpeg->video_st)->coded_frame->pts;
 
             if (AVSTREAM_CODEC_PTR(ffmpeg->video_st)->coded_frame->key_frame)
-#   if LIBAVCODEC_VERSION_MAJOR < 53                
+#if LIBAVCODEC_VERSION_MAJOR < 53                
                 pkt.flags |= PKT_FLAG_KEY;
-#   else
+#else
                 pkt.flags |= AV_PKT_FLAG_KEY;
-#   endif                
+#endif                
+
 
             pkt.data = ffmpeg->video_outbuf;
             pkt.size = out_size;
@@ -918,7 +666,6 @@ int ffmpeg_put_frame(struct ffmpeg *ffmpeg, AVFrame *pic)
             ret = av_write_frame(ffmpeg->oc, ffmpeg->video_st->index,
                                  ffmpeg->video_outbuf, out_size);
 #endif /* FFMPEG_AVWRITEFRAME_NEWAPI */
-
         } else {
             ret = 0;
         }
