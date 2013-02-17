@@ -1340,10 +1340,10 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-#ifdef HAVE_FFMPEG
+//#ifdef HAVE_FFMPEG
     {
     "on_movie_start",
-    "# Command to be executed when a movie file (.mpg|.avi) is created. (default: none)\n"
+    "# Command to be executed when a movie file is created. (default: none)\n"
     "# To give the filename as an argument to a command append it with %f",
     0,
     CONF_OFFSET(on_movie_start),
@@ -1352,14 +1352,14 @@ config_param config_params[] = {
     },
     {
     "on_movie_end",
-    "# Command to be executed when a movie file (.mpg|.avi) is closed. (default: none)\n"
+    "# Command to be executed when a movie file is closed. (default: none)\n"
     "# To give the filename as an argument to a command append it with %f",
     0,
     CONF_OFFSET(on_movie_end),
     copy_string,
     print_string
     },
-#endif /* HAVE_FFMPEG */
+//#endif /* HAVE_FFMPEG */
     {
     "on_camera_lost",
     "# Command to be executed when a camera can't be opened or if it is lost\n"

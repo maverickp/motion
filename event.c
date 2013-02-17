@@ -451,6 +451,7 @@ static void event_create_extpipe(struct context *cnt, int type ATTRIBUTE_UNUSED,
         /* Open a dummy file to check if path is correct */
         fd_dummy = myfopen(cnt->extpipefilename, "w", 0);
 
+
         /* TODO: trigger some warning instead of only log an error message */
         if (fd_dummy == NULL) {
             /* Permission denied */
@@ -476,6 +477,8 @@ static void event_create_extpipe(struct context *cnt, int type ATTRIBUTE_UNUSED,
                    stamp);
         MOTION_LOG(NTC, TYPE_EVENTS, NO_ERRNO, "%s: cnt->moviefps: %d",
                    cnt->movie_fps);
+	MOTION_LOG(NTC, TYPE_EVENTS, NO_ERRNO, "%s: moviepath: %s",
+                   cnt->extpipefilename);
 
         event(cnt, EVENT_FILECREATE, NULL, cnt->extpipefilename, (void *)FTYPE_MPEG, NULL);
         cnt->extpipe = popen(stamp, "w");
