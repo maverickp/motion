@@ -960,10 +960,9 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-//#ifdef HAVE_FFMPEG
     {
     "movie_filename",
-    "# File path for motion triggered ffmpeg films (movies) relative to target_dir\n"
+    "# File path for motion triggered films (movies) relative to target_dir\n"
     "# Default: "DEF_MOVIEPATH"\n"
     "# Default value is equivalent to legacy oldlayout option\n"
     "# For Motion 3.0 compatible mode choose: %Y/%m/%d/%H%M%S\n"
@@ -1340,7 +1339,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-//#ifdef HAVE_FFMPEG
     {
     "on_movie_start",
     "# Command to be executed when a movie file is created. (default: none)\n"
@@ -1359,7 +1357,6 @@ config_param config_params[] = {
     copy_string,
     print_string
     },
-//#endif /* HAVE_FFMPEG */
     {
     "on_camera_lost",
     "# Command to be executed when a camera can't be opened or if it is lost\n"

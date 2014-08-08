@@ -77,6 +77,7 @@ Bugfixes
    * Fixed help text for options event_gap and area_detect
    * Fixed motion.conf-dist , adding text according with config options.
    * Fixed a bug in post_capture. It was missed under certain conditions.
+   * Enable video-related config options like "movie_filename" for non-ffmpeg builds
    * Fixed configure for SDL.
    * Replace malloc() by calloc(). (Jeroen Massar)
    * Free file descriptor buffers on exit.
